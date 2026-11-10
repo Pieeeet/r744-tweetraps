@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactieve R744/CO2-simulator voor een transkritische tweetrapscyclus met intercooler en liquid receiver.">
+  <link rel="icon" href="data:,">
+  <title>R744 tweetraps koelkring · CoolProp WASM</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">R744 · CO₂ · volledig in de browser</p>
+      <h1>Tweetraps koelkring</h1>
+      <p class="subtitle">Intercooler, flashgas en liquid receiver</p>
+    </div>
+    <div class="status-cluster">
+      <span id="statusDot" class="status-dot" aria-hidden="true"></span>
+      <span id="runtimeStatus" class="status-pill" role="status" aria-live="polite">CoolProp laden…</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="panel input-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Randvoorwaarden</p>
+            <h2>Invoer</h2>
+          </div>
+          <button id="resetButton" class="ghost-button" type="button">Reset</button>
+        </div>
+
+        <label class="control" for="evapTemp">
+          <span><b>Verdamping</b><output id="evapTempOut">−30 °C</output></span>
+          <input id="evapTemp" type="range" min="-50" max="5" step="1" value="-30">
+        </label>
+        <label class="control" for="receiverPressure">
+          <span><b>Receiverdruk</b><output id="receiverPressureOut">35 bar</output></span>
+          <input id="receiverPressure" type="range" min="20" max="65" step="1" value="35">
+        </label>
+        <label class="control" for="highPressure">
+          <span><b>Hogedruk</b><output id="highPressureOut">90 bar</output></span>
+          <input id="highPressure" type="range" min="74" max="130" step="1" value="90">
+        </label>
+        <label class="control" for="gasCoolerTemp">
+          <span><b>Gaskoeler uit</b><output id="gasCoolerTempOut">32 °C</output></span>
+          <input id="gasCoolerTemp" type="range" min="20" max="50" step="1" value="32">
+        </label>
+        <label class="control" for="superheat">
+          <span><b>Oververhitting</b><output id="superheatOut">8 K</output></span>
+          <input id="superheat" type="range" min="1" max="25" step="1" value="8">
+        </label>
+        <label class="control" for="intercoolerApproach">
+          <span><b>Intercooler-benadering</b><output id="intercoolerApproachOut">5 K</output></span>
+          <input id="intercoolerApproach" type="range" min="1" max="30" step="1" value="5">
+        </label>
+        <label class="control" for="etaLow">
+          <span><b>η lage trap</b><output id="etaLowOut">70 %</output></span>
+          <input id="etaLow" type="range" min="45" max="90" step="1" value="70">
+        </label>
+        <label class="control" for="etaHigh">
+          <span><b>η hoge trap</b><output id="etaHighOut">70 %</output></span>
+          <input id="etaHigh" type="range" min="45" max="90" step="1" value="70">
+        </label>
+        <label class="control" for="capacity">
+          <span><b>Koelvermogen</b><output id="capacityOut">30 kW</output></span>
+          <input id="capacity" type="range" min="5" max="150" step="5" value="30">
+        </label>
+
+        <div class="preset-row" aria-label="Voorinstellingen">
+          <button class="preset active" type="button" data-preset="freeze">Diepvries</button>
+          <button class="preset" type="button" data-preset="medium">Koeling</button>
+          <button class="preset" type="button" data-preset="hot">Warm klimaat</button>
+        </div>
+      </section>
+
+      <section class="panel assumptions">
+        <p class="eyebrow">Rekenmodel</p>
+        <h2>Flash receiver</h2>
+        <p>Na de hogedrukklep scheidt de receiver vloeistof en flashgas. De vloeistof voedt de verdamper; het flashgas mengt met de gekoelde persgasstroom vóór de hogedrukcompressor.</p>
+        <ul>
+          <li>stationair bedrijf;</li>
+          <li>geen drukverlies of warmteverlies in leidingen;</li>
+          <li>isenthalpische expansieventielen;</li>
+          <li>verzadigde receiveruitgangen.</li>
+        </ul>
+      </section>
+    </aside>
+
+    <div class="workspace">
+      <div id="message" class="message hidden" role="alert"></div>
+
+      <section class="metric-grid" aria-label="Hoofdresultaten">
+        <article class="metric primary"><span>COP</span><strong id="copValue">—</strong><small>koelbedrijf</small></article>
+        <article class="metric"><span>Totaal compressor</span><strong id="powerValue">—</strong><small id="powerSplit">lage + hoge trap</small></article>
+        <article class="metric"><span>Verdampermassadebiet</span><strong id="massLowValue">—</strong><small>door lage trap</small></article>
+        <article class="metric"><span>Flashgas</span><strong id="flashValue">—</strong><small>van receiver naar hoge trap</small></article>
+        <article class="metric"><span>Intercooler</span><strong id="intercoolerValue">—</strong><small>af te voeren warmte</small></article>
+        <article class="metric"><span>Gaskoeler</span><strong id="gasCoolerValue">—</strong><small>afgegeven warmte</small></article>
+      </section>
+
+      <section class="panel chart-panel">
+        <div class="section-heading chart-heading">
+          <div>
+            <p class="eyebrow">Thermodynamisch diagram</p>
+            <h2>Log(p)-h-diagram</h2>
+          </div>
+          <div class="chart-actions">
+            <label class="toggle"><input id="showTemperature" type="checkbox" checked><span>Isothermen</span></label>
+            <label class="toggle"><input id="showEntropy" type="checkbox" checked><span>Isentropen</span></label>
+            <label class="toggle"><input id="showQuality" type="checkbox" checked><span>Dampgehalte</span></label>
+            <button id="downloadSvg" class="ghost-button" type="button">SVG</button>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <svg id="phChart" viewBox="0 0 1040 650" role="img" aria-labelledby="chartTitle chartDesc">
+            <title id="chartTitle">Logaritmisch druk-enthalpiediagram van de tweetraps R744-koelkring</title>
+            <desc id="chartDesc">R744-verzadigingskoepel, isothermen, isentropen, dampgehaltelijnen en tien toestandspunten van de cyclus.</desc>
+          </svg>
+          <div id="tooltip" class="tooltip hidden"></div>
+          <div id="chartLoader" class="chart-loader"><span></span><b>Isolijnen berekenen…</b></div>
+        </div>
+        <div class="legend">
+          <span><i class="swatch cycle"></i>Kringproces</span>
+          <span><i class="swatch dome"></i>Verzadiging</span>
+          <span><i class="swatch temp"></i>Isotherm</span>
+          <span><i class="swatch entropy"></i>Isentroop</span>
+          <span><i class="swatch quality"></i>Dampgehalte</span>
+          <span><i class="swatch branch"></i>Flashgastak</span>
+        </div>
+      </section>
+
+      <section class="detail-grid">
+        <article class="panel schematic-panel">
+          <div class="section-heading">
+            <div><p class="eyebrow">Proces</p><h2>Cyclusopbouw</h2></div>
+          </div>
+          <svg class="schematic" viewBox="0 0 760 320" role="img" aria-label="Schema van de tweetraps CO2-koelkring">
+            <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z"></path></marker></defs>
+            <g class="pipe">
+              <path d="M105 236 H205 M285 236 H350 V185 M350 118 V76 H455 M545 76 H650 V206 H590 M500 236 H438 M350 185 V236 H285 M205 76 H105 V206"/>
+              <path class="flash-pipe" d="M545 236 H590 V144 H455"/>
+            </g>
+            <g class="component">
+              <rect x="25" y="206" width="80" height="60" rx="12"/><text x="65" y="232">Verdamper</text><text x="65" y="249" class="minor">10 → 1</text>
+              <path d="M205 206 l80 30 -80 30 z"/><text x="243" y="288">LP-compressor</text>
+              <rect x="310" y="118" width="80" height="67" rx="12"/><text x="350" y="145">Intercooler</text><text x="350" y="163" class="minor">2 → 3</text>
+              <path d="M455 46 l90 30 -90 30 z"/><text x="500" y="27">HP-compressor</text>
+              <rect x="650" y="178" width="82" height="58" rx="12"/><text x="691" y="202">Gaskoeler</text><text x="691" y="219" class="minor">6 → 7</text>
+              <rect x="500" y="206" width="90" height="60" rx="14"/><text x="545" y="230">Receiver</text><text x="545" y="248" class="minor">8 / 4 / 9</text>
+              <path d="M438 220 v32 l-35 -16 z"/><text x="420" y="287">LP-ventiel</text>
+              <path d="M615 190 v32 l-35 -16 z"/><text x="610" y="164">HP-ventiel</text>
+            </g>
+            <g class="state-badge">
+              <text x="125" y="225">1</text><text x="300" y="225">2</text><text x="368" y="104">3</text><text x="425" y="91">5</text><text x="570" y="92">6</text><text x="670" y="164">7</text><text x="607" y="243">8</text><text x="468" y="252">9</text><text x="114" y="259">10</text><text x="571" y="154">4</text>
+            </g>
+          </svg>
+          <div class="mini-stats">
+            <span><b id="receiverTemp">—</b> receiver T<sub>sat</sub></span>
+            <span><b id="massHighValue">—</b> hoge-trapdebiet</span>
+            <span><b id="energyBalance">—</b> energiebalans</span>
+          </div>
+        </article>
+
+        <article class="panel notes-panel">
+          <div class="section-heading"><div><p class="eyebrow">Interpretatie</p><h2>Ontwerpcontrole</h2></div></div>
+          <div id="checks" class="checks"><p>Wachten op CoolProp…</p></div>
+        </article>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="section-heading">
+          <div><p class="eyebrow">Numerieke resultaten</p><h2>Toestandspunten</h2></div>
+          <button id="downloadCsv" class="ghost-button" type="button">CSV</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Punt</th><th>Locatie</th><th>p (bar a)</th><th>T (°C)</th><th>h (kJ/kg)</th><th>s (kJ/kg·K)</th><th>ρ (kg/m³)</th><th>Fase</th></tr></thead>
+            <tbody id="stateRows"><tr><td colspan="8">CoolProp wordt geladen…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer>
+        <p>Didactische simulatie met CoolProp WebAssembly. Controleer ontwerpberekeningen altijd met gevalideerde projectsoftware en fabrikantgegevens.</p>
+      </footer>
+    </div>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

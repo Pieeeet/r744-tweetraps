@@ -1,0 +1,11 @@
+Plaats hier het bestaande bestand coolprop.wasm uit dezelfde officiële CoolProp-download als coolprop.js.
+
+De uiteindelijke GitHub Pages-root moet bevatten:
+- index.html
+- app.js
+- style.css
+- coolprop.js
+- coolprop.wasm
+- README.md
+
+Hernoem dit tekstbestand niet naar .wasm; gebruik het echte binaire bestand van ongeveer 8,8 MB.
